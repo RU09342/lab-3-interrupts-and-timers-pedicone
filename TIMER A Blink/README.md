@@ -1,15 +1,103 @@
-# TIMER A Blink
-The TIMER peripherals can be used in many situations thanks to it flexibility in features. For this lab, you will be only scratching the surface as to what this peripheral can do. 
+# Lab 3 - Timer A
+#### Jack Pedicone
+##### 10-14-2017
 
-## Up, Down, Continuous 
-There are a few different ways that the timer module can count. For starters, one of the easiest to initialize is Continuous counting where in the TIMER module will alert you when its own counting register overflows. Up mode allows you to utilize a Capture/Compare register to have the counter stop at a particular count and then start back over again. You can also set the TIMER to Up/Down mode where upon hitting a counter or the overflow, instead of setting the counter back to zero, it will count back down to zero. 
+## Library Used
+msp430.h - default library
 
-## Task
+## Dependencies
+* MSP430 Development boards
+* Code Composer Studio
+* Two LEDs
+
+## File name
+* timera.c
+
+## Set Requirements
 Using the TIMER module instead of a software loop, control the speed of two LEDS blinking on your development boards. Experiment with the different counting modes available as well as the effect of the pre-dividers. Why would you ever want to use a pre-divider? What about the Capture and Compare registers? Your code should include a function (if you want, place it in its own .c and .h files) which can convert a desired Hz into the proper values required to operate the TIMER modules.
 
-### Extra Work
-#### Thinking with HALs
-So maybe up to this point you have noticed that your software is looking pretty damn similar to each other for each one of these boards. What if there was a way to abstract away all of the particulars for a processor and use the same functional C code for each board? Just for this simple problem, why don't you try and build a "config.h" file which using IFDEF statements can check to see what processor is on board and initialize particular registers based on that.
+#### Tasks
+* [x] Implement a function that will allow an entered frequency in (hertz) to work with the timers
+* [x] Create two timer interrupts that each control the state of an individual LED.
 
-#### Low Power Timers
-Since you should have already done a little with interrupts, why not build this system up using interrupts and when the processor is basically doing nothing other than burning clock cycles, drop it into a Low Power mode. Do a little research and figure out what some of these low power modes actually do to the processor, then try and use them in your code. If you really want to put your code to the test, using the MSP430FR5994 and the built in super cap, try and get your code to run for the longest amount of time only using that capacitor as your power source.
+## Compatibility
+* [x] MSP430F5529
+* [x] MSP430FR2311
+* [x] MSP430FR6989
+* [x] MSP430FR5594
+* [x] MSP430G2553
+
+### Detailed Description
+
+* * Create the void initTimer before the main
+* Stop watchdog timer
+* For FR boards, disable the GPIO power-on default high-impedance mode
+* Initialize GPIO pins for the LEDs
+* Enable GIE to allow general interrupts to occur
+* Inside the initTimer function, enable the capture/compare register for both timers
+* Set both timers to use the SMCLK (1MHz) divided by 8 (ID_3) in upmode
+* Divide 125000 (the frequency of the clock after being divided by 8) by the entered freq (in the code it's 20), and set that to the integer 'capture'.
+* Set the compare/control register of the first timer to capture, which in this case is 10 Hz
+* Set the compare/control register of the second timer to double the value of capture, which in this case is the equivalent of 5 Hz
+* Use pragma vector to begin the timer interrupts
+* In both timer interrupts, use an XOR statement to toggle the LED on or off depending on the state, with each timer controlling a different LED. 
+
+
+#### Example code from FR6989
+
+```C
+/*
+Button based delay - FR6989
+Author: Jack Pedicone
+credit to Josh Gould for the initTimer function
+ */
+ 
+#include <msp430.h>
+
+#define light   BIT0;
+#define light2  BIT7;
+
+void initTimer (int freq); //captures desired frequency
+
+void main(void)
+{
+  WDTCTL = WDTPW + WDTHOLD;                 // Stop WDT
+  PM5CTL0 &= ~LOCKLPM5;                   // Disable the GPIO power-on default high-impedance mode
+
+  initTimer(20); // Initialize timer at 10Hz or 0.1s
+
+  P1DIR |= light;                           // The two LEDs are set as outputs
+  P9DIR |= light2;
+  P1OUT &= ~light;                          // Start with both LEDs off
+  P9OUT &= ~light2;
+  _BIS_SR(LPM0_bits + GIE);                 // Enter LPM0 w/ interrupt
+
+}
+
+void initTimer (int freq)
+{
+    CCTL0 = CCIE;                   // CCR0 interrupt enabled
+    CCTL1 = CCIE;
+    TA0CTL = TASSEL_2 + MC_1 + ID_3;  // SMCLK/8 in upmode
+    TA1CTL = TASSEL_2 + MC_1 + ID_3;  // SMCLK/8 in upmode
+    int capture = (125000) / freq;    // manage frequency
+    TA0CCR0 = capture;                // (1000000/8)/(12500) = 10 Hz = 0.1 seconds
+    TA1CCR0 = capture *= 2;
+}
+
+// Timer A0 interrupt service routine
+#pragma vector=TIMER0_A0_VECTOR
+__interrupt void Timer_A (void)
+{
+   P1OUT ^= light;                          // Toggle the first LED on and off
+}
+
+// Timer A1 interrupt service routine
+#pragma vector=TIMER1_A0_VECTOR
+__interrupt void Timer_B (void)
+{
+   P9OUT ^= light2;                          // Toggle the second LED on and off
+}
+
+```
+
